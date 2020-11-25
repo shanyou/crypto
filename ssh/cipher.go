@@ -17,6 +17,8 @@ import (
 	"io"
 	"io/ioutil"
 
+	"golang.org/x/crypto/sm4"
+
 	"golang.org/x/crypto/chacha20"
 	"golang.org/x/crypto/poly1305"
 )
@@ -42,6 +44,15 @@ type noneCipher struct{}
 
 func (c noneCipher) XORKeyStream(dst, src []byte) {
 	copy(dst, src)
+}
+
+func newSM4CTR(key, iv []byte) (cipher.Stream, error) {
+	c, err := sm4.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return cipher.NewCTR(c, iv), nil
 }
 
 func newAESCTR(key, iv []byte) (cipher.Stream, error) {
@@ -102,7 +113,7 @@ var cipherModes = map[string]*cipherMode{
 	"aes128-ctr": {16, aes.BlockSize, streamCipherMode(0, newAESCTR)},
 	"aes192-ctr": {24, aes.BlockSize, streamCipherMode(0, newAESCTR)},
 	"aes256-ctr": {32, aes.BlockSize, streamCipherMode(0, newAESCTR)},
-
+	"sm4128-ctr": {16, sm4.BlockSize, streamCipherMode(0, newSM4CTR)},
 	// Ciphers from RFC4345, which introduces security-improved arcfour ciphers.
 	// They are defined in the order specified in the RFC.
 	"arcfour128": {16, 0, streamCipherMode(1536, newRC4)},
