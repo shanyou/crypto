@@ -26,6 +26,7 @@ const (
 
 // supportedCiphers lists ciphers we support but might not recommend.
 var supportedCiphers = []string{
+	"sm4128-ctr",
 	"aes128-ctr", "aes192-ctr", "aes256-ctr",
 	"aes128-gcm@openssh.com",
 	chacha20Poly1305ID,
@@ -36,6 +37,7 @@ var supportedCiphers = []string{
 
 // preferredCiphers specifies the default preference for ciphers.
 var preferredCiphers = []string{
+	"sm4128-ctr",
 	"aes128-gcm@openssh.com",
 	chacha20Poly1305ID,
 	"aes128-ctr", "aes192-ctr", "aes256-ctr",
