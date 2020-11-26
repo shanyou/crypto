@@ -26,7 +26,9 @@ import (
 	"sync"
 
 	"crypto"
+
 	"golang.org/x/crypto/ed25519"
+	"golang.org/x/crypto/sm2"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -518,6 +520,14 @@ type ecdsaKeyMsg struct {
 	Constraints []byte `ssh:"rest"`
 }
 
+type sm2KeyMsg struct {
+	Type        string `sshtype:"17|25"`
+	KeyBytes    []byte
+	D           *big.Int
+	Comments    string
+	Constraints []byte `ssh:"rest"`
+}
+
 type ed25519KeyMsg struct {
 	Type        string `sshtype:"17|25"`
 	Pub         []byte
@@ -554,6 +564,14 @@ func (c *client) insertKey(s interface{}, comment string, constraints []byte) er
 			G:           k.G,
 			Y:           k.Y,
 			X:           k.X,
+			Comments:    comment,
+			Constraints: constraints,
+		})
+	case *sm2.PrivateKey:
+		req = ssh.Marshal(sm2KeyMsg{
+			Type:        ssh.KeyAlgoSM2P256,
+			KeyBytes:    elliptic.Marshal(k.Curve, k.X, k.Y),
+			D:           k.D,
 			Comments:    comment,
 			Constraints: constraints,
 		})
@@ -632,6 +650,14 @@ type ecdsaCertMsg struct {
 	Constraints []byte `ssh:"rest"`
 }
 
+type sm2CertMsg struct {
+	Type        string `sshtype:"17|25"`
+	CertBytes   []byte
+	D           *big.Int
+	Comments    string
+	Constraints []byte `ssh:"rest"`
+}
+
 type ed25519CertMsg struct {
 	Type        string `sshtype:"17|25"`
 	CertBytes   []byte
@@ -689,6 +715,14 @@ func (c *client) insertCert(s interface{}, cert *ssh.Certificate, comment string
 		})
 	case *ecdsa.PrivateKey:
 		req = ssh.Marshal(ecdsaCertMsg{
+			Type:        cert.Type(),
+			CertBytes:   cert.Marshal(),
+			D:           k.D,
+			Comments:    comment,
+			Constraints: constraints,
+		})
+	case *sm2.PrivateKey:
+		req = ssh.Marshal(sm2CertMsg{
 			Type:        cert.Type(),
 			CertBytes:   cert.Marshal(),
 			D:           k.D,

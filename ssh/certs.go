@@ -25,6 +25,7 @@ const (
 	CertAlgoSKECDSA256v01 = "sk-ecdsa-sha2-nistp256-cert-v01@openssh.com"
 	CertAlgoED25519v01    = "ssh-ed25519-cert-v01@openssh.com"
 	CertAlgoSKED25519v01  = "sk-ssh-ed25519-cert-v01@openssh.com"
+	CertAlgoSM2P256v01    = "sm2-sha2-p256-cert-v01@casicloud.com"
 )
 
 // Certificate types distinguish between host and user
@@ -440,6 +441,7 @@ var certAlgoNames = map[string]string{
 	KeyAlgoSKECDSA256: CertAlgoSKECDSA256v01,
 	KeyAlgoED25519:    CertAlgoED25519v01,
 	KeyAlgoSKED25519:  CertAlgoSKED25519v01,
+	KeyAlgoSM2P256:    CertAlgoSM2P256v01,
 }
 
 // certToPrivAlgo returns the underlying algorithm for a certificate algorithm.

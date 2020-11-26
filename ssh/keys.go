@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/ed25519"
+	"golang.org/x/crypto/sm2"
 	"golang.org/x/crypto/ssh/internal/bcrypt_pbkdf"
 )
 
@@ -41,6 +42,7 @@ const (
 	KeyAlgoECDSA521   = "ecdsa-sha2-nistp521"
 	KeyAlgoED25519    = "ssh-ed25519"
 	KeyAlgoSKED25519  = "sk-ssh-ed25519@openssh.com"
+	KeyAlgoSM2P256    = "sm2-sha2-p256@casicloud.com"
 )
 
 // These constants represent non-default signature algorithms that are supported
@@ -63,13 +65,15 @@ func parsePubKey(in []byte, algo string) (pubKey PublicKey, rest []byte, err err
 		return parseDSA(in)
 	case KeyAlgoECDSA256, KeyAlgoECDSA384, KeyAlgoECDSA521:
 		return parseECDSA(in)
+	case KeyAlgoSM2P256:
+		return parseSM2(in)
 	case KeyAlgoSKECDSA256:
 		return parseSKECDSA(in)
 	case KeyAlgoED25519:
 		return parseED25519(in)
 	case KeyAlgoSKED25519:
 		return parseSKEd25519(in)
-	case CertAlgoRSAv01, CertAlgoDSAv01, CertAlgoECDSA256v01, CertAlgoECDSA384v01, CertAlgoECDSA521v01, CertAlgoSKECDSA256v01, CertAlgoED25519v01, CertAlgoSKED25519v01:
+	case CertAlgoRSAv01, CertAlgoDSAv01, CertAlgoECDSA256v01, CertAlgoECDSA384v01, CertAlgoECDSA521v01, CertAlgoSKECDSA256v01, CertAlgoED25519v01, CertAlgoSKED25519v01, CertAlgoSM2P256v01:
 		cert, err := parseCert(in, certToPrivAlgo(algo))
 		if err != nil {
 			return nil, nil, err
@@ -526,6 +530,78 @@ func (k *dsaPrivateKey) SignWithAlgorithm(rand io.Reader, data []byte, algorithm
 		Format: k.PublicKey().Type(),
 		Blob:   sig,
 	}, nil
+}
+
+type sm2PublicKey sm2.PublicKey
+
+func (k *sm2PublicKey) Type() string {
+	return KeyAlgoSM2P256
+}
+
+func (k *sm2PublicKey) Marshal() []byte {
+	// See RFC 5656, section 3.1.
+	keyBytes := elliptic.Marshal(k.Curve, k.X, k.Y)
+	// sm2 publickey struct layout should match the struct used by
+	// parseSM2Cert in the x/crypto/ssh/agent package.
+	w := struct {
+		Name string
+		Key  []byte
+	}{
+		k.Type(),
+		keyBytes,
+	}
+
+	return Marshal(&w)
+}
+
+func (k *sm2PublicKey) Verify(data []byte, sig *Signature) error {
+	if sig.Format != k.Type() {
+		return fmt.Errorf("ssh: signature type %s for key type %s", sig.Format, k.Type())
+	}
+
+	h := ecHash(k.Curve).New()
+	h.Write(data)
+	digest := h.Sum(nil)
+
+	type asn1Signature struct {
+		R, S *big.Int
+	}
+	asn1Sig := new(asn1Signature)
+	_, err := asn1.Unmarshal(sig.Blob, asn1Sig)
+	if err != nil {
+		return err
+	}
+
+	if sm2.Verify((*sm2.PublicKey)(k), digest, asn1Sig.R, asn1Sig.S) {
+		return nil
+	}
+	return errors.New("ssh: signature did not verify")
+}
+
+func (k *sm2PublicKey) CryptoPublicKey() crypto.PublicKey {
+	return (*sm2.PublicKey)(k)
+}
+
+// parseSM2 parses an sm2 key according to RFC 5656, section 3.1.
+func parseSM2(in []byte) (out PublicKey, rest []byte, err error) {
+	var w struct {
+		KeyBytes []byte
+		Rest     []byte `ssh:"rest"`
+	}
+
+	if err := Unmarshal(in, &w); err != nil {
+		return nil, nil, err
+	}
+
+	key := new(sm2.PublicKey)
+
+	key.Curve = sm2.P256Sm2()
+
+	key.X, key.Y = elliptic.Unmarshal(key.Curve, w.KeyBytes)
+	if key.X == nil || key.Y == nil {
+		return nil, nil, errors.New("ssh: invalid curve point")
+	}
+	return (*sm2PublicKey)(key), w.Rest, nil
 }
 
 type ecdsaPublicKey ecdsa.PublicKey
@@ -993,6 +1069,8 @@ func (s *wrappedSigner) SignWithAlgorithm(rand io.Reader, data []byte, algorithm
 			hashFunc = crypto.SHA1
 		case *ecdsaPublicKey:
 			hashFunc = ecHash(key.Curve)
+		case *sm2PublicKey:
+			hashFunc = crypto.SHA256
 		case ed25519PublicKey:
 		default:
 			return nil, fmt.Errorf("ssh: unsupported key type %T", key)
@@ -1065,6 +1143,8 @@ func NewPublicKey(key interface{}) (PublicKey, error) {
 			return nil, fmt.Errorf("ssh: invalid size %d for Ed25519 public key", l)
 		}
 		return ed25519PublicKey(key), nil
+	case *sm2.PublicKey:
+		return (*sm2PublicKey)(key), nil
 	default:
 		return nil, fmt.Errorf("ssh: unsupported key type %T", key)
 	}

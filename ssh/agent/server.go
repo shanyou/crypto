@@ -17,6 +17,7 @@ import (
 	"math/big"
 
 	"golang.org/x/crypto/ed25519"
+	"golang.org/x/crypto/sm2"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -346,6 +347,37 @@ func parseEd25519Cert(req []byte) (*AddedKey, error) {
 	return addedKey, nil
 }
 
+func unmarshalSM2(keyBytes []byte, privScalar *big.Int) (priv *sm2.PrivateKey, err error) {
+	priv = &sm2.PrivateKey{
+		D: privScalar,
+	}
+	priv.Curve = sm2.P256Sm2()
+	priv.X, priv.Y = elliptic.Unmarshal(priv.Curve, keyBytes)
+	if priv.X == nil || priv.Y == nil {
+		return nil, errors.New("agent: point not on curve")
+	}
+
+	return priv, nil
+}
+
+func parseSM2Key(req []byte) (*AddedKey, error) {
+	var k sm2KeyMsg
+	if err := ssh.Unmarshal(req, &k); err != nil {
+		return nil, err
+	}
+
+	priv, err := unmarshalSM2(k.KeyBytes, k.D)
+	if err != nil {
+		return nil, err
+	}
+
+	addedKey := &AddedKey{PrivateKey: priv, Comment: k.Comments}
+	if err := setConstraints(addedKey, k.Constraints); err != nil {
+		return nil, err
+	}
+	return addedKey, nil
+}
+
 func parseECDSAKey(req []byte) (*AddedKey, error) {
 	var k ecdsaKeyMsg
 	if err := ssh.Unmarshal(req, &k); err != nil {
@@ -490,6 +522,42 @@ func parseECDSACert(req []byte) (*AddedKey, error) {
 	return addedKey, nil
 }
 
+func parseSM2Cert(req []byte) (*AddedKey, error) {
+	var k sm2CertMsg
+	if err := ssh.Unmarshal(req, &k); err != nil {
+		return nil, err
+	}
+
+	pubKey, err := ssh.ParsePublicKey(k.CertBytes)
+	if err != nil {
+		return nil, err
+	}
+	cert, ok := pubKey.(*ssh.Certificate)
+	if !ok {
+		return nil, errors.New("agent: bad ECDSA certificate")
+	}
+
+	// An sm2 publickey as marshaled by sm2PublicKey.Marshal() in keys.go
+	var sm2Pub struct {
+		Name string
+		Key  []byte
+	}
+	if err := ssh.Unmarshal(cert.Key.Marshal(), &sm2Pub); err != nil {
+		return nil, err
+	}
+
+	priv, err := unmarshalSM2(sm2Pub.Key, k.D)
+	if err != nil {
+		return nil, err
+	}
+
+	addedKey := &AddedKey{PrivateKey: priv, Certificate: cert, Comment: k.Comments}
+	if err := setConstraints(addedKey, k.Constraints); err != nil {
+		return nil, err
+	}
+	return addedKey, nil
+}
+
 func (s *server) insertIdentity(req []byte) error {
 	var record struct {
 		Type string `sshtype:"17|25"`
@@ -510,6 +578,8 @@ func (s *server) insertIdentity(req []byte) error {
 		addedKey, err = parseDSAKey(req)
 	case ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521:
 		addedKey, err = parseECDSAKey(req)
+	case ssh.KeyAlgoSM2P256:
+		addedKey, err = parseSM2Key(req)
 	case ssh.KeyAlgoED25519:
 		addedKey, err = parseEd25519Key(req)
 	case ssh.CertAlgoRSAv01:
@@ -518,6 +588,8 @@ func (s *server) insertIdentity(req []byte) error {
 		addedKey, err = parseDSACert(req)
 	case ssh.CertAlgoECDSA256v01, ssh.CertAlgoECDSA384v01, ssh.CertAlgoECDSA521v01:
 		addedKey, err = parseECDSACert(req)
+	case ssh.CertAlgoSM2P256v01:
+		addedKey, err = parseSM2Cert(req)
 	case ssh.CertAlgoED25519v01:
 		addedKey, err = parseEd25519Cert(req)
 	default:

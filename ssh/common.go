@@ -73,9 +73,10 @@ var preferredKexAlgos = []string{
 var supportedHostKeyAlgos = []string{
 	CertAlgoRSAv01, CertAlgoDSAv01, CertAlgoECDSA256v01,
 	CertAlgoECDSA384v01, CertAlgoECDSA521v01, CertAlgoED25519v01,
+	CertAlgoSM2P256v01,
 
 	KeyAlgoECDSA256, KeyAlgoECDSA384, KeyAlgoECDSA521,
-	KeyAlgoRSA, KeyAlgoDSA,
+	KeyAlgoRSA, KeyAlgoDSA, KeyAlgoSM2P256,
 
 	KeyAlgoED25519,
 }
@@ -97,11 +98,13 @@ var hashFuncs = map[string]crypto.Hash{
 	KeyAlgoECDSA256:     crypto.SHA256,
 	KeyAlgoECDSA384:     crypto.SHA384,
 	KeyAlgoECDSA521:     crypto.SHA512,
+	KeyAlgoSM2P256:      crypto.SHA256,
 	CertAlgoRSAv01:      crypto.SHA1,
 	CertAlgoDSAv01:      crypto.SHA1,
 	CertAlgoECDSA256v01: crypto.SHA256,
 	CertAlgoECDSA384v01: crypto.SHA384,
 	CertAlgoECDSA521v01: crypto.SHA512,
+	CertAlgoSM2P256v01:  crypto.SHA256,
 }
 
 // unexpectedMessageError results when the SSH message that we received didn't
