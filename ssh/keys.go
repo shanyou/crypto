@@ -559,20 +559,12 @@ func (k *sm2PublicKey) Verify(data []byte, sig *Signature) error {
 		return fmt.Errorf("ssh: signature type %s for key type %s", sig.Format, k.Type())
 	}
 
-	h := ecHash(k.Curve).New()
+	h := crypto.SHA256.New()
 	h.Write(data)
 	digest := h.Sum(nil)
 
-	type asn1Signature struct {
-		R, S *big.Int
-	}
-	asn1Sig := new(asn1Signature)
-	_, err := asn1.Unmarshal(sig.Blob, asn1Sig)
-	if err != nil {
-		return err
-	}
-
-	if sm2.Verify((*sm2.PublicKey)(k), digest, asn1Sig.R, asn1Sig.S) {
+	pubkey := (*sm2.PublicKey)(k)
+	if pubkey.Verify(digest, sig.Blob) {
 		return nil
 	}
 	return errors.New("ssh: signature did not verify")
