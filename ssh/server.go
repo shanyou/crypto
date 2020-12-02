@@ -60,7 +60,7 @@ func (p *Permissions) Merge(src *Permissions, policy int) {
 	for k, v := range src.Extensions {
 		if policy == PermOverride {
 			p.Extensions[k] = v
-		} else {
+		} else if policy == PermNewer {
 			if _, ok := p.Extensions[k]; !ok {
 				p.Extensions[k] = v
 			}
@@ -70,7 +70,7 @@ func (p *Permissions) Merge(src *Permissions, policy int) {
 	for k, v := range src.CriticalOptions {
 		if policy == PermOverride {
 			p.CriticalOptions[k] = v
-		} else {
+		} else if policy == PermNewer {
 			if _, ok := p.CriticalOptions[k]; !ok {
 				p.CriticalOptions[k] = v
 			}
