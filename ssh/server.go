@@ -503,7 +503,6 @@ userAuthLoop:
 		//
 		if s.user != userAuthReq.User {
 			s.partialSuccessMethods = nil
-			perms = nil
 		}
 
 		s.user = userAuthReq.User
