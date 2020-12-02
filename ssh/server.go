@@ -45,6 +45,39 @@ type Permissions struct {
 	Extensions map[string]string
 }
 
+const (
+	// PermOverride when merging permission try to override before
+	PermOverride = iota
+	// PermNewer when merging permission try to add new
+	PermNewer
+)
+
+//Merge permissions from another permission, policy either PermOverride or PermNewer
+func (p *Permissions) Merge(src *Permissions, policy int) {
+	if src == nil {
+		return
+	}
+	for k, v := range src.Extensions {
+		if policy == PermOverride {
+			p.Extensions[k] = v
+		} else {
+			if _, ok := p.Extensions[k]; !ok {
+				p.Extensions[k] = v
+			}
+		}
+	}
+
+	for k, v := range src.CriticalOptions {
+		if policy == PermOverride {
+			p.CriticalOptions[k] = v
+		} else {
+			if _, ok := p.CriticalOptions[k]; !ok {
+				p.CriticalOptions[k] = v
+			}
+		}
+	}
+}
+
 type GSSAPIWithMICConfig struct {
 	// AllowLogin, must be set, is called when gssapi-with-mic
 	// authentication is selected (RFC 4462 section 3). The srcName is from the
@@ -419,6 +452,10 @@ func (s *connection) serverAuthenticate(config *ServerConfig) (*Permissions, err
 	sessionID := s.transport.getSessionID()
 	var cache pubKeyCache
 	var perms *Permissions
+	permsMerged := &Permissions{
+		CriticalOptions: map[string]string{},
+		Extensions:      map[string]string{},
+	}
 
 	authFailures := 0
 	var authErrs []error
@@ -466,6 +503,7 @@ userAuthLoop:
 		//
 		if s.user != userAuthReq.User {
 			s.partialSuccessMethods = nil
+			perms = nil
 		}
 
 		s.user = userAuthReq.User
@@ -694,6 +732,8 @@ userAuthLoop:
 			// multi-step auth fails
 			s.partialSuccessMethods = append(s.partialSuccessMethods, userAuthReq.Method)
 			allowedMethods := config.NextAuthMethodsCallback(s)
+			// merge permission
+			permsMerged.Merge(perms, PermOverride)
 			if len(allowedMethods) > 0 {
 				failureMsg.PartialSuccess = true
 				failureMsg.Methods = allowedMethods
@@ -722,7 +762,9 @@ userAuthLoop:
 	if err := s.transport.writePacket([]byte{msgUserAuthSuccess}); err != nil {
 		return nil, err
 	}
-	return perms, nil
+	// merge again
+	permsMerged.Merge(perms, PermOverride)
+	return permsMerged, nil
 }
 
 // sshClientKeyboardInteractive implements a ClientKeyboardInteractive by

@@ -403,3 +403,95 @@ func TestMultiStepAuthKeyAndPwdAndKeyboardInteractive(t *testing.T) {
 		t.Fatal("server not returned partial success")
 	}
 }
+
+func TestMultiStepPermssionMerging(t *testing.T) {
+	var serverAuthErrors []error
+	username := "testuser"
+	errPwdAuthFailed := errors.New("password auth failed")
+	errWrongSequence := errors.New("wrong sequence")
+
+	serverConfig := &ServerConfig{
+		PasswordCallback: func(conn ConnMetadata, pass []byte) (*Permissions, error) {
+			perm := &Permissions{
+				CriticalOptions: map[string]string{},
+				Extensions:      map[string]string{},
+			}
+			perm.Extensions["test-password"] = "ok"
+			// we only accept password auth if public key auth was already completed
+			if len(conn.PartialSuccessMethods()) == 0 {
+				return nil, errWrongSequence
+			}
+			if conn.PartialSuccessMethods()[0] != "publickey" {
+				return nil, errWrongSequence
+			}
+			if conn.User() == username && string(pass) == clientPassword {
+				return perm, nil
+			}
+			return nil, errPwdAuthFailed
+		},
+		PublicKeyCallback: func(conn ConnMetadata, key PublicKey) (*Permissions, error) {
+			perm := &Permissions{
+				CriticalOptions: map[string]string{},
+				Extensions:      map[string]string{},
+			}
+			perm.Extensions["test-publickey"] = "ok"
+			if conn.User() == username && bytes.Equal(key.Marshal(), testPublicKeys["rsa"].Marshal()) {
+				// we only accept public key auth if it is the first authentication step
+				if len(conn.PartialSuccessMethods()) == 0 {
+					return perm, ErrPartialSuccess
+				}
+				return nil, errWrongSequence
+			}
+
+			return nil, fmt.Errorf("pubkey for %q not acceptable", conn.User())
+		},
+		NextAuthMethodsCallback: func(conn ConnMetadata) []string {
+			if len(conn.PartialSuccessMethods()) == 1 && conn.PartialSuccessMethods()[0] == "publickey" {
+				return []string{"password"}
+			}
+			return []string{"publickey", "password"}
+		},
+	}
+
+	clientConfig := &ClientConfig{
+		User: username,
+		Auth: []AuthMethod{
+			PublicKeys(testSigners["rsa"]),
+			Password(clientPassword),
+		},
+		HostKeyCallback: InsecureIgnoreHostKey(),
+	}
+
+	c1, c2, err := netPipe()
+	if err != nil {
+		t.Fatalf("netPipe: %v", err)
+	}
+	defer c1.Close()
+	defer c2.Close()
+
+	serverConfig.AddHostKey(testSigners["rsa"])
+	serverConfig.AuthLogCallback = func(conn ConnMetadata, method string, err error) {
+		serverAuthErrors = append(serverAuthErrors, err)
+	}
+
+	incoming := make(chan *ServerConn, 1)
+	go func() {
+		conn, _, _, err := NewServerConn(c1, serverConfig)
+		if err != nil {
+			t.Fatalf("Server: %v", err)
+		}
+		incoming <- conn
+	}()
+	_, _, _, err = NewClientConn(c2, "", clientConfig)
+	if err != nil {
+		t.Fatalf("client login error: %s", err)
+	}
+
+	server := <-incoming
+	if _, ok := server.Permissions.Extensions["test-password"]; !ok {
+		t.Fatal("merge permission error")
+	}
+	if _, ok := server.Permissions.Extensions["test-publickey"]; !ok {
+		t.Fatal("merge permission error")
+	}
+}
